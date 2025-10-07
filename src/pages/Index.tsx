@@ -6,6 +6,7 @@ import { Separator } from '@/components/ui/separator';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import Icon from '@/components/ui/icon';
 import { toast } from 'sonner';
 
@@ -20,9 +21,10 @@ interface Passenger {
   documentNumber: string;
 }
 
-interface Service {
-  id: string;
-  name: string;
+interface PassengerService {
+  passengerId: string;
+  serviceId: string;
+  serviceName: string;
   price: number;
 }
 
@@ -38,16 +40,14 @@ interface Segment {
   arrivalTime: string;
   carrier: string;
   flightNumber: string;
-  price: number;
-  passengers: string[];
-  services: Service[];
+  basePrice: number;
+  passengerServices: PassengerService[];
 }
 
 interface Order {
   id: string;
   status: OrderStatus;
   createdAt: string;
-  totalPrice: number;
   segments: Segment[];
   passengers: Passenger[];
 }
@@ -56,7 +56,6 @@ const mockOrder: Order = {
   id: 'ORD-2025-10-001',
   status: 'active',
   createdAt: '2025-10-01T10:30:00',
-  totalPrice: 45800,
   passengers: [
     { id: 'p1', firstName: 'Иван', lastName: 'Петров', documentNumber: '4517 123456' },
     { id: 'p2', firstName: 'Мария', lastName: 'Петрова', documentNumber: '4518 654321' },
@@ -75,11 +74,13 @@ const mockOrder: Order = {
       arrivalTime: '10:00',
       carrier: 'Аэрофлот',
       flightNumber: 'SU 1234',
-      price: 8500,
-      passengers: ['p1', 'p2'],
-      services: [
-        { id: 'srv1', name: 'Багаж 23кг', price: 1500 },
-        { id: 'srv2', name: 'Выбор места', price: 500 },
+      basePrice: 5000,
+      passengerServices: [
+        { passengerId: 'p1', serviceId: 'srv1', serviceName: 'Билет', price: 5000 },
+        { passengerId: 'p1', serviceId: 'srv2', serviceName: 'Багаж 23кг', price: 1500 },
+        { passengerId: 'p1', serviceId: 'srv3', serviceName: 'Выбор места 12A', price: 500 },
+        { passengerId: 'p2', serviceId: 'srv4', serviceName: 'Билет', price: 5000 },
+        { passengerId: 'p2', serviceId: 'srv5', serviceName: 'Багаж 23кг', price: 1500 },
       ],
     },
     {
@@ -94,10 +95,13 @@ const mockOrder: Order = {
       arrivalTime: '02:00',
       carrier: 'РЖД',
       flightNumber: '001А',
-      price: 12000,
-      passengers: ['p1', 'p2', 'p3'],
-      services: [
-        { id: 'srv3', name: 'Питание', price: 800 },
+      basePrice: 3500,
+      passengerServices: [
+        { passengerId: 'p1', serviceId: 'srv6', serviceName: 'Билет (купе)', price: 3500 },
+        { passengerId: 'p1', serviceId: 'srv7', serviceName: 'Питание', price: 800 },
+        { passengerId: 'p2', serviceId: 'srv8', serviceName: 'Билет (купе)', price: 3500 },
+        { passengerId: 'p2', serviceId: 'srv9', serviceName: 'Питание', price: 800 },
+        { passengerId: 'p3', serviceId: 'srv10', serviceName: 'Билет (плацкарт)', price: 2200 },
       ],
     },
     {
@@ -112,9 +116,10 @@ const mockOrder: Order = {
       arrivalTime: '17:30',
       carrier: 'Фликсбас',
       flightNumber: 'FB-405',
-      price: 1200,
-      passengers: ['p1'],
-      services: [],
+      basePrice: 1200,
+      passengerServices: [
+        { passengerId: 'p1', serviceId: 'srv11', serviceName: 'Билет', price: 1200 },
+      ],
     },
   ],
 };
@@ -123,7 +128,8 @@ const Index = () => {
   const [order] = useState<Order>(mockOrder);
   const [selectedSegment, setSelectedSegment] = useState<Segment | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [actionType, setActionType] = useState<'cancel' | 'refund' | null>(null);
+  const [actionType, setActionType] = useState<'cancel' | 'refund' | 'cancelOrder' | 'refundOrder' | null>(null);
+  const [expandedSegments, setExpandedSegments] = useState<string[]>([]);
 
   const getTransportIcon = (type: TransportType) => {
     switch (type) {
@@ -151,18 +157,24 @@ const Index = () => {
     }
   };
 
-  const handleAction = (segment: Segment, action: 'cancel' | 'refund') => {
+  const handleAction = (segment: Segment | null, action: 'cancel' | 'refund' | 'cancelOrder' | 'refundOrder') => {
     setSelectedSegment(segment);
     setActionType(action);
     setDialogOpen(true);
   };
 
   const confirmAction = () => {
-    toast.success(
-      actionType === 'cancel' 
-        ? `Сегмент ${selectedSegment?.flightNumber} отменён` 
-        : `Возврат по сегменту ${selectedSegment?.flightNumber} оформлен`
-    );
+    if (actionType === 'cancelOrder') {
+      toast.success('Весь заказ отменён');
+    } else if (actionType === 'refundOrder') {
+      toast.success('Возврат по всему заказу оформлен');
+    } else {
+      toast.success(
+        actionType === 'cancel' 
+          ? `Сегмент ${selectedSegment?.flightNumber} отменён` 
+          : `Возврат по сегменту ${selectedSegment?.flightNumber} оформлен`
+      );
+    }
     setDialogOpen(false);
   };
 
@@ -171,185 +183,371 @@ const Index = () => {
     return passenger ? `${passenger.firstName} ${passenger.lastName}` : '';
   };
 
+  const getPassengerById = (passengerId: string) => {
+    return order.passengers.find(p => p.id === passengerId);
+  };
+
+  const getSegmentPassengers = (segment: Segment) => {
+    const passengerIds = [...new Set(segment.passengerServices.map(ps => ps.passengerId))];
+    return passengerIds.map(id => order.passengers.find(p => p.id === id)!).filter(Boolean);
+  };
+
+  const getPassengerServicesInSegment = (segment: Segment, passengerId: string) => {
+    return segment.passengerServices.filter(ps => ps.passengerId === passengerId);
+  };
+
+  const getSegmentTotalPrice = (segment: Segment) => {
+    return segment.passengerServices.reduce((sum, ps) => sum + ps.price, 0);
+  };
+
+  const getOrderTotalPrice = () => {
+    return order.segments.reduce((sum, seg) => sum + getSegmentTotalPrice(seg), 0);
+  };
+
+  const getPassengerSegments = (passengerId: string) => {
+    return order.segments.filter(seg => 
+      seg.passengerServices.some(ps => ps.passengerId === passengerId)
+    );
+  };
+
+  const getPassengerTotalSpent = (passengerId: string) => {
+    return order.segments.reduce((sum, seg) => {
+      const passengerServices = seg.passengerServices.filter(ps => ps.passengerId === passengerId);
+      return sum + passengerServices.reduce((s, ps) => s + ps.price, 0);
+    }, 0);
+  };
+
+  const toggleSegment = (segmentId: string) => {
+    setExpandedSegments(prev => 
+      prev.includes(segmentId) 
+        ? prev.filter(id => id !== segmentId)
+        : [...prev, segmentId]
+    );
+  };
+
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
       <div className="max-w-7xl mx-auto space-y-6 animate-fade-in">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl md:text-4xl font-bold text-foreground">Заказ {order.id}</h1>
-            <p className="text-muted-foreground mt-1">Создан {new Date(order.createdAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+            <p className="text-muted-foreground mt-1">
+              Создан {new Date(order.createdAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
+            </p>
           </div>
-          <Badge className="h-8 px-4 bg-primary text-primary-foreground border-0">
-            {order.status === 'active' ? 'Активный' : order.status === 'completed' ? 'Завершён' : 'Отменён'}
-          </Badge>
+          <div className="flex items-center gap-3">
+            <Badge className="h-8 px-4 bg-primary text-primary-foreground border-0">
+              {order.status === 'active' ? 'Активный' : order.status === 'completed' ? 'Завершён' : 'Отменён'}
+            </Badge>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Icon name="MoreVertical" size={18} className="mr-2" />
+                  Действия с заказом
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem onClick={() => handleAction(null, 'cancelOrder')}>
+                  <Icon name="XCircle" size={16} className="mr-2" />
+                  Отменить весь заказ
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleAction(null, 'refundOrder')}>
+                  <Icon name="RefreshCcw" size={16} className="mr-2" />
+                  Вернуть весь заказ
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem>
+                  <Icon name="Download" size={16} className="mr-2" />
+                  Скачать PDF
+                </DropdownMenuItem>
+                <DropdownMenuItem>
+                  <Icon name="Mail" size={16} className="mr-2" />
+                  Отправить на почту
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
 
         <Card className="p-6 shadow-lg border-2 hover:shadow-xl transition-shadow">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
             <div>
               <p className="text-sm text-muted-foreground mb-1">Общая стоимость</p>
-              <p className="text-3xl font-bold text-foreground">{order.totalPrice.toLocaleString('ru-RU')} ₽</p>
+              <p className="text-2xl md:text-3xl font-bold text-foreground">{getOrderTotalPrice().toLocaleString('ru-RU')} ₽</p>
             </div>
             <div>
               <p className="text-sm text-muted-foreground mb-1">Сегментов</p>
-              <p className="text-3xl font-bold text-foreground">{order.segments.length}</p>
+              <p className="text-2xl md:text-3xl font-bold text-foreground">{order.segments.length}</p>
             </div>
             <div>
               <p className="text-sm text-muted-foreground mb-1">Пассажиров</p>
-              <p className="text-3xl font-bold text-foreground">{order.passengers.length}</p>
+              <p className="text-2xl md:text-3xl font-bold text-foreground">{order.passengers.length}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground mb-1">Статус</p>
+              <div className="flex items-center gap-2 mt-1">
+                <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                <span className="text-sm font-semibold">Все подтверждены</span>
+              </div>
             </div>
           </div>
         </Card>
 
         <Tabs defaultValue="segments" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 md:w-auto md:inline-grid h-auto">
+          <TabsList className="grid w-full grid-cols-2 md:w-auto md:inline-grid h-auto">
             <TabsTrigger value="segments" className="text-sm md:text-base">
-              <Icon name="List" size={18} className="mr-2" />
-              Сегменты
+              <Icon name="Route" size={18} className="mr-2" />
+              Сегменты ({order.segments.length})
             </TabsTrigger>
             <TabsTrigger value="passengers" className="text-sm md:text-base">
               <Icon name="Users" size={18} className="mr-2" />
-              Пассажиры
-            </TabsTrigger>
-            <TabsTrigger value="history" className="text-sm md:text-base">
-              <Icon name="Clock" size={18} className="mr-2" />
-              История
+              Пассажиры ({order.passengers.length})
             </TabsTrigger>
           </TabsList>
 
           <TabsContent value="segments" className="space-y-4 mt-6">
-            {order.segments.map((segment) => (
-              <Card key={segment.id} className="overflow-hidden border-2 hover:shadow-lg transition-all hover-scale">
-                <div className="p-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                        <Icon name={getTransportIcon(segment.type)} size={24} className="text-primary" />
-                      </div>
-                      <div>
-                        <h3 className="text-xl font-bold">{segment.carrier}</h3>
-                        <p className="text-muted-foreground">{segment.flightNumber}</p>
-                      </div>
-                    </div>
-                    <Badge className={`${getStatusColor(segment.status)} border`}>
-                      {getStatusText(segment.status)}
-                    </Badge>
-                  </div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm text-muted-foreground">
+                Показаны все сегменты путешествия. Каждый можно отменить или вернуть отдельно.
+              </p>
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => setExpandedSegments(expandedSegments.length === order.segments.length ? [] : order.segments.map(s => s.id))}
+              >
+                {expandedSegments.length === order.segments.length ? 'Свернуть все' : 'Развернуть все'}
+              </Button>
+            </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <div className="flex items-center gap-3">
-                      <Icon name="MapPin" size={20} className="text-muted-foreground" />
-                      <div>
-                        <p className="font-semibold">{segment.from}</p>
-                        <p className="text-sm text-muted-foreground">{segment.departureDate} в {segment.departureTime}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <Icon name="MapPinCheckInside" size={20} className="text-muted-foreground" />
-                      <div>
-                        <p className="font-semibold">{segment.to}</p>
-                        <p className="text-sm text-muted-foreground">{segment.arrivalDate} в {segment.arrivalTime}</p>
-                      </div>
-                    </div>
-                  </div>
+            {order.segments.map((segment, index) => {
+              const passengers = getSegmentPassengers(segment);
+              const totalPrice = getSegmentTotalPrice(segment);
+              const isExpanded = expandedSegments.includes(segment.id);
 
-                  <Accordion type="single" collapsible className="border-t pt-4">
-                    <AccordionItem value="details" className="border-0">
-                      <AccordionTrigger className="text-sm font-semibold hover:no-underline">
-                        Детали сегмента
-                      </AccordionTrigger>
-                      <AccordionContent>
-                        <div className="space-y-4 pt-2">
-                          <div>
-                            <p className="text-sm font-semibold mb-2">Пассажиры ({segment.passengers.length})</p>
-                            <div className="space-y-1">
-                              {segment.passengers.map((passengerId) => (
-                                <div key={passengerId} className="flex items-center gap-2 text-sm">
-                                  <Icon name="User" size={16} className="text-muted-foreground" />
-                                  <span>{getPassengerName(passengerId)}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          {segment.services.length > 0 && (
-                            <div>
-                              <p className="text-sm font-semibold mb-2">Дополнительные услуги</p>
-                              <div className="space-y-1">
-                                {segment.services.map((service) => (
-                                  <div key={service.id} className="flex items-center justify-between text-sm">
-                                    <span className="flex items-center gap-2">
-                                      <Icon name="Package" size={16} className="text-muted-foreground" />
-                                      {service.name}
-                                    </span>
-                                    <span className="font-semibold">{service.price} ₽</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          <Separator />
-
-                          <div className="flex items-center justify-between">
-                            <span className="font-semibold">Стоимость сегмента</span>
-                            <span className="text-xl font-bold text-primary">{segment.price.toLocaleString('ru-RU')} ₽</span>
-                          </div>
+              return (
+                <Card key={segment.id} className="overflow-hidden border-2 hover:shadow-lg transition-all">
+                  <div className="p-4 md:p-6">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center gap-3 flex-1">
+                        <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <Icon name={getTransportIcon(segment.type)} size={20} className="text-primary" />
                         </div>
-                      </AccordionContent>
-                    </AccordionItem>
-                  </Accordion>
-
-                  {segment.status === 'confirmed' && (
-                    <div className="flex gap-2 mt-4 pt-4 border-t">
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={() => handleAction(segment, 'cancel')}
-                        className="flex-1"
-                      >
-                        <Icon name="XCircle" size={16} className="mr-2" />
-                        Отменить
-                      </Button>
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={() => handleAction(segment, 'refund')}
-                        className="flex-1"
-                      >
-                        <Icon name="RefreshCcw" size={16} className="mr-2" />
-                        Возврат
-                      </Button>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs md:text-sm font-semibold text-muted-foreground">Сегмент {index + 1}</span>
+                            <Badge className={`${getStatusColor(segment.status)} border text-xs`}>
+                              {getStatusText(segment.status)}
+                            </Badge>
+                          </div>
+                          <h3 className="text-lg md:text-xl font-bold truncate">{segment.carrier}</h3>
+                          <p className="text-sm text-muted-foreground">{segment.flightNumber}</p>
+                        </div>
+                      </div>
+                      <div className="text-right ml-4">
+                        <p className="text-xs text-muted-foreground">Стоимость</p>
+                        <p className="text-lg md:text-xl font-bold text-primary">{totalPrice.toLocaleString('ru-RU')} ₽</p>
+                      </div>
                     </div>
-                  )}
-                </div>
-              </Card>
-            ))}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 p-4 bg-muted/30 rounded-lg">
+                      <div className="flex items-start gap-3">
+                        <Icon name="MapPin" size={20} className="text-muted-foreground mt-1 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <p className="font-semibold text-sm md:text-base truncate">{segment.from}</p>
+                          <p className="text-xs md:text-sm text-muted-foreground">
+                            {new Date(segment.departureDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })} в {segment.departureTime}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3">
+                        <Icon name="MapPinCheckInside" size={20} className="text-muted-foreground mt-1 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <p className="font-semibold text-sm md:text-base truncate">{segment.to}</p>
+                          <p className="text-xs md:text-sm text-muted-foreground">
+                            {new Date(segment.arrivalDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })} в {segment.arrivalTime}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mb-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-sm font-semibold">Пассажиры в сегменте ({passengers.length})</p>
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => toggleSegment(segment.id)}
+                          className="h-8"
+                        >
+                          {isExpanded ? (
+                            <>
+                              <Icon name="ChevronUp" size={16} className="mr-1" />
+                              Свернуть
+                            </>
+                          ) : (
+                            <>
+                              <Icon name="ChevronDown" size={16} className="mr-1" />
+                              Детали
+                            </>
+                          )}
+                        </Button>
+                      </div>
+
+                      {!isExpanded && (
+                        <div className="flex flex-wrap gap-2">
+                          {passengers.map((passenger) => {
+                            const services = getPassengerServicesInSegment(segment, passenger.id);
+                            const passengerTotal = services.reduce((sum, s) => sum + s.price, 0);
+                            return (
+                              <div key={passenger.id} className="flex items-center gap-2 bg-background border rounded-lg px-3 py-2">
+                                <Icon name="User" size={14} className="text-muted-foreground" />
+                                <span className="text-sm font-medium">{passenger.firstName} {passenger.lastName}</span>
+                                <span className="text-xs text-muted-foreground">({passengerTotal.toLocaleString('ru-RU')} ₽)</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {isExpanded && (
+                        <div className="space-y-3">
+                          {passengers.map((passenger) => {
+                            const services = getPassengerServicesInSegment(segment, passenger.id);
+                            const passengerTotal = services.reduce((sum, s) => sum + s.price, 0);
+
+                            return (
+                              <Card key={passenger.id} className="p-4 bg-background/50">
+                                <div className="flex items-start justify-between mb-3">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-secondary/10 flex items-center justify-center">
+                                      <Icon name="User" size={18} className="text-secondary" />
+                                    </div>
+                                    <div>
+                                      <p className="font-semibold">{passenger.firstName} {passenger.lastName}</p>
+                                      <p className="text-xs text-muted-foreground">{passenger.documentNumber}</p>
+                                    </div>
+                                  </div>
+                                  <p className="text-sm font-bold">{passengerTotal.toLocaleString('ru-RU')} ₽</p>
+                                </div>
+
+                                <div className="space-y-2">
+                                  <p className="text-xs font-semibold text-muted-foreground uppercase">Услуги</p>
+                                  {services.map((service) => (
+                                    <div key={service.serviceId} className="flex items-center justify-between text-sm">
+                                      <div className="flex items-center gap-2">
+                                        <Icon name="Check" size={14} className="text-green-600" />
+                                        <span>{service.serviceName}</span>
+                                      </div>
+                                      <span className="font-medium">{service.price.toLocaleString('ru-RU')} ₽</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </Card>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {segment.status === 'confirmed' && (
+                      <div className="flex gap-2 pt-4 border-t">
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleAction(segment, 'cancel')}
+                          className="flex-1"
+                        >
+                          <Icon name="XCircle" size={16} className="mr-2" />
+                          Отменить сегмент
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleAction(segment, 'refund')}
+                          className="flex-1"
+                        >
+                          <Icon name="RefreshCcw" size={16} className="mr-2" />
+                          Возврат сегмента
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              );
+            })}
           </TabsContent>
 
           <TabsContent value="passengers" className="space-y-4 mt-6">
+            <p className="text-sm text-muted-foreground mb-4">
+              Детальная информация по каждому пассажиру: участие в сегментах и оформленные услуги.
+            </p>
+
             {order.passengers.map((passenger) => {
-              const passengerSegments = order.segments.filter(s => s.passengers.includes(passenger.id));
+              const segments = getPassengerSegments(passenger.id);
+              const totalSpent = getPassengerTotalSpent(passenger.id);
+
               return (
-                <Card key={passenger.id} className="p-6 border-2 hover:shadow-lg transition-shadow">
-                  <div className="flex items-start gap-4">
+                <Card key={passenger.id} className="p-4 md:p-6 border-2 hover:shadow-lg transition-shadow">
+                  <div className="flex flex-col md:flex-row md:items-start gap-4">
                     <div className="w-14 h-14 rounded-full bg-secondary/10 flex items-center justify-center flex-shrink-0">
                       <Icon name="User" size={28} className="text-secondary" />
                     </div>
-                    <div className="flex-1">
-                      <h3 className="text-xl font-bold mb-1">{passenger.firstName} {passenger.lastName}</h3>
-                      <p className="text-sm text-muted-foreground mb-4">Документ: {passenger.documentNumber}</p>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-col md:flex-row md:items-start justify-between gap-2 mb-4">
+                        <div>
+                          <h3 className="text-xl font-bold mb-1">{passenger.firstName} {passenger.lastName}</h3>
+                          <p className="text-sm text-muted-foreground">Документ: {passenger.documentNumber}</p>
+                        </div>
+                        <div className="text-left md:text-right">
+                          <p className="text-xs text-muted-foreground">Общая стоимость</p>
+                          <p className="text-2xl font-bold text-primary">{totalSpent.toLocaleString('ru-RU')} ₽</p>
+                        </div>
+                      </div>
                       
+                      <Separator className="mb-4" />
+
                       <div>
-                        <p className="text-sm font-semibold mb-2">Участвует в сегментах ({passengerSegments.length})</p>
-                        <div className="space-y-2">
-                          {passengerSegments.map((segment) => (
-                            <div key={segment.id} className="flex items-center gap-3 text-sm bg-muted/50 p-3 rounded-lg">
-                              <Icon name={getTransportIcon(segment.type)} size={18} className="text-primary" />
-                              <span className="font-medium">{segment.from} → {segment.to}</span>
-                              <span className="text-muted-foreground">{segment.departureDate}</span>
-                            </div>
-                          ))}
+                        <p className="text-sm font-semibold mb-3">Участие в сегментах ({segments.length})</p>
+                        <div className="space-y-3">
+                          {segments.map((segment) => {
+                            const services = getPassengerServicesInSegment(segment, passenger.id);
+                            const segmentTotal = services.reduce((sum, s) => sum + s.price, 0);
+
+                            return (
+                              <div key={segment.id} className="bg-muted/30 p-4 rounded-lg">
+                                <div className="flex items-start justify-between mb-3">
+                                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                                    <Icon name={getTransportIcon(segment.type)} size={20} className="text-primary flex-shrink-0" />
+                                    <div className="min-w-0">
+                                      <p className="font-semibold text-sm truncate">{segment.from} → {segment.to}</p>
+                                      <p className="text-xs text-muted-foreground">
+                                        {segment.carrier} {segment.flightNumber} · {new Date(segment.departureDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <Badge className={`${getStatusColor(segment.status)} border text-xs flex-shrink-0 ml-2`}>
+                                    {getStatusText(segment.status)}
+                                  </Badge>
+                                </div>
+
+                                <div className="space-y-1 mb-2">
+                                  {services.map((service) => (
+                                    <div key={service.serviceId} className="flex items-center justify-between text-xs">
+                                      <span className="text-muted-foreground">{service.serviceName}</span>
+                                      <span className="font-medium">{service.price.toLocaleString('ru-RU')} ₽</span>
+                                    </div>
+                                  ))}
+                                </div>
+
+                                <Separator className="my-2" />
+
+                                <div className="flex items-center justify-between text-sm">
+                                  <span className="font-semibold">Итого по сегменту</span>
+                                  <span className="font-bold text-primary">{segmentTotal.toLocaleString('ru-RU')} ₽</span>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     </div>
@@ -358,58 +556,6 @@ const Index = () => {
               );
             })}
           </TabsContent>
-
-          <TabsContent value="history" className="mt-6">
-            <Card className="p-6 border-2">
-              <div className="space-y-4">
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                    <Icon name="CheckCircle" size={20} className="text-primary" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-semibold">Заказ создан</p>
-                    <p className="text-sm text-muted-foreground">01 октября 2025, 10:30</p>
-                  </div>
-                </div>
-
-                <Separator />
-
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-                    <Icon name="CheckCircle" size={20} className="text-green-600" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-semibold">Сегмент подтверждён</p>
-                    <p className="text-sm text-muted-foreground">Авиаперелёт SU 1234 · 01 октября 2025, 10:35</p>
-                  </div>
-                </div>
-
-                <Separator />
-
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-                    <Icon name="CheckCircle" size={20} className="text-green-600" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-semibold">Сегмент подтверждён</p>
-                    <p className="text-sm text-muted-foreground">Поезд 001А · 01 октября 2025, 10:40</p>
-                  </div>
-                </div>
-
-                <Separator />
-
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                    <Icon name="CreditCard" size={20} className="text-blue-600" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-semibold">Оплата получена</p>
-                    <p className="text-sm text-muted-foreground">45 800 ₽ · 01 октября 2025, 10:45</p>
-                  </div>
-                </div>
-              </div>
-            </Card>
-          </TabsContent>
         </Tabs>
       </div>
 
@@ -417,16 +563,20 @@ const Index = () => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {actionType === 'cancel' ? 'Отмена сегмента' : 'Возврат билета'}
+              {actionType === 'cancel' && 'Отмена сегмента'}
+              {actionType === 'refund' && 'Возврат билета'}
+              {actionType === 'cancelOrder' && 'Отмена всего заказа'}
+              {actionType === 'refundOrder' && 'Возврат всего заказа'}
             </DialogTitle>
             <DialogDescription>
-              {actionType === 'cancel' 
-                ? 'Вы уверены, что хотите отменить этот сегмент? Действие нельзя отменить.'
-                : 'Вы уверены, что хотите оформить возврат по этому сегменту?'}
+              {actionType === 'cancel' && 'Вы уверены, что хотите отменить этот сегмент? Действие нельзя отменить.'}
+              {actionType === 'refund' && 'Вы уверены, что хотите оформить возврат по этому сегменту?'}
+              {actionType === 'cancelOrder' && 'Вы уверены, что хотите отменить весь заказ? Все сегменты будут отменены.'}
+              {actionType === 'refundOrder' && 'Вы уверены, что хотите оформить возврат по всему заказу?'}
             </DialogDescription>
           </DialogHeader>
           
-          {selectedSegment && (
+          {selectedSegment ? (
             <div className="py-4 space-y-3">
               <div className="bg-muted/50 p-4 rounded-lg">
                 <p className="text-sm font-semibold mb-2">Детали сегмента</p>
@@ -437,7 +587,21 @@ const Index = () => {
               
               <div className="flex items-center justify-between">
                 <span className="text-sm">Стоимость</span>
-                <span className="font-bold">{selectedSegment.price.toLocaleString('ru-RU')} ₽</span>
+                <span className="font-bold">{getSegmentTotalPrice(selectedSegment).toLocaleString('ru-RU')} ₽</span>
+              </div>
+            </div>
+          ) : (
+            <div className="py-4 space-y-3">
+              <div className="bg-muted/50 p-4 rounded-lg">
+                <p className="text-sm font-semibold mb-2">Детали заказа</p>
+                <p className="text-sm">Заказ {order.id}</p>
+                <p className="text-sm text-muted-foreground">Сегментов: {order.segments.length}</p>
+                <p className="text-sm text-muted-foreground">Пассажиров: {order.passengers.length}</p>
+              </div>
+              
+              <div className="flex items-center justify-between">
+                <span className="text-sm">Общая стоимость</span>
+                <span className="font-bold">{getOrderTotalPrice().toLocaleString('ru-RU')} ₽</span>
               </div>
             </div>
           )}
@@ -447,10 +611,13 @@ const Index = () => {
               Отмена
             </Button>
             <Button 
-              variant={actionType === 'cancel' ? 'destructive' : 'default'}
+              variant={(actionType === 'cancel' || actionType === 'cancelOrder') ? 'destructive' : 'default'}
               onClick={confirmAction}
             >
-              {actionType === 'cancel' ? 'Отменить сегмент' : 'Оформить возврат'}
+              {actionType === 'cancel' && 'Отменить сегмент'}
+              {actionType === 'refund' && 'Оформить возврат'}
+              {actionType === 'cancelOrder' && 'Отменить заказ'}
+              {actionType === 'refundOrder' && 'Вернуть заказ'}
             </Button>
           </DialogFooter>
         </DialogContent>
